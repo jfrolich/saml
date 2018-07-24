@@ -1,6 +1,7 @@
 defmodule SAMLTest do
   use ExUnit.Case
   doctest SAML
+  import SAML.XMerl.Record
 
   def parse_xml!(str) do
     {doc, _} = :xmerl_scan.string(str |> to_charlist(), [{:namespace_conformant, true}])
@@ -270,5 +271,124 @@ defmodule SAMLTest do
          "mail" => "test@test.com"
        }
      }} = SAML.decode_assertion(doc)
+  end
+
+  @assertion_attributes [
+    xml_attribute(
+      name: :"xmlns:saml",
+      value: 'urn:oasis:names:tc:SAML:2.0:assertion'
+    ),
+    xml_attribute(
+      name: :Version,
+      value: '2.0'
+    ),
+    xml_attribute(
+      name: :IssueInstant,
+      value: 'now'
+    )
+  ]
+  test "validate assertion" do
+    now = :erlang.localtime() |> :erlang.localtime_to_universaltime()
+    death_secs = now |> :calendar.datetime_to_gregorian_seconds()
+
+    death =
+      death_secs |> :calendar.gregorian_seconds_to_datetime() |> SAML.Utils.datetime_to_saml()
+
+    ns = xml_namespace(nodes: [{'saml', :"urn:oasis:names:tc:SAML:2.0:assertion"}])
+
+    e1 =
+      SAML.Utils.build_nsinfo(
+        ns,
+        xml_element(
+          name: :"saml:Assertion",
+          attributes: @assertion_attributes,
+          content: [
+            xml_element(
+              name: :"saml:Subject",
+              content: [
+                xml_element(
+                  name: :"saml:SubjectConfirmation",
+                  content: [
+                    xml_element(
+                      name: :"saml:SubjectConfirmationData",
+                      attributes: [
+                        xml_attribute(name: :Recipient, value: 'foobar'),
+                        xml_attribute(name: :NotOnOrAfter, value: death)
+                      ]
+                    )
+                  ]
+                )
+              ]
+            ),
+            xml_element(
+              name: :"saml:Conditions",
+              content: [
+                xml_element(
+                  name: :"saml:AudienceRestriction",
+                  content: [
+                    xml_element(
+                      name: :"saml:Audience",
+                      content: [
+                        xml_text(value: 'foo')
+                      ]
+                    )
+                  ]
+                )
+              ]
+            )
+          ]
+        )
+      )
+
+    assert {:ok, assertion} = SAML.validate_assertion(e1, "foobar", "foo")
+
+    assert %SAML.Assertion{
+             issue_instant: "now",
+             recipient: "foobar",
+             conditions: %{
+               audience: "foo"
+             },
+             subject: %SAML.Subject{
+               notonorafter: ^death
+             }
+           } = assertion
+
+    assert {:error, :bad_recipient} = SAML.validate_assertion(e1, "foo", "something")
+    assert {:error, :bad_audience} = SAML.validate_assertion(e1, "foobar", "something")
+
+    e2 =
+      SAML.Utils.build_nsinfo(
+        ns,
+        xml_element(
+          name: :"saml:Assertion",
+          attributes: @assertion_attributes,
+          content: [
+            xml_element(
+              name: :"saml:Subject",
+              content: [
+                xml_element(name: :"saml:SubjectConfirmation", content: [])
+              ]
+            ),
+            xml_element(
+              name: :"saml:Conditions",
+              content: [
+                xml_element(
+                  name: :"saml:AudienceRestriction",
+                  content: [
+                    xml_element(
+                      name: :"saml:Audience",
+                      content: [
+                        xml_text(value: "foo")
+                      ]
+                    )
+                  ]
+                )
+              ]
+            )
+          ]
+        )
+      )
+
+    assert {:error, :bad_recipient} = SAML.validate_assertion(e2, "", "")
   end
 end

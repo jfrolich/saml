@@ -27,6 +27,10 @@ defmodule SAML.XPath do
     end
   end
 
+  defp to_nil_string(nil), do: nil
+  defp to_nil_string(str) when is_list(str), do: to_string(str)
+  defp to_nil_string(str) when is_binary(str), do: str
+
   def list(xml, ns, xpath) do
     case :xmerl_xpath.string(xpath, xml, [{:namespace, ns}]) do
       v when is_list(v) -> v
@@ -35,7 +39,7 @@ defmodule SAML.XPath do
 
   def attr_required(xml, ns, xpath, error) do
     with {:ok, value} <- xpath_generic(xml, ns, xpath, :xml_attribute, {:error, error}) do
-      {:ok, to_string(value)}
+      {:ok, to_nil_string(value)}
     end
   end
 
@@ -45,22 +49,23 @@ defmodule SAML.XPath do
 
   def attr(xml, ns, xpath, default) do
     {:ok, value} = xpath_generic(xml, ns, xpath, :xml_attribute, {:ok, default})
-    to_string(value)
+
+    to_nil_string(value)
   end
 
   def attr(xml, ns, xpath, trans_fun, default) do
     {:ok, value} = xpath_generic(xml, ns, xpath, trans_fun, :xml_attribute, {:ok, default})
-    to_string(value)
+    to_nil_string(value)
   end
 
   def text(xml, ns, xpath, default) do
     {:ok, text} = xpath_generic(xml, ns, xpath, :xml_text, {:ok, default})
-    to_string(text)
+    to_nil_string(text)
   end
 
   def text_required(xml, ns, xpath, error) do
     with {:ok, text} <- xpath_generic(xml, ns, xpath, :xml_text, {:error, error}) do
-      {:ok, to_string(text)}
+      {:ok, to_nil_string(text)}
     end
   end
 

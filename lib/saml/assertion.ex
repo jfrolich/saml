@@ -4,6 +4,6 @@ defmodule SAML.Assertion do
             recipient: "",
             issuer: "",
             subject: %SAML.Subject{},
-            conditions: [],
-            attributes: []
+            conditions: %{},
+            attributes: %{}
 end

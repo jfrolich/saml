@@ -238,6 +238,81 @@ defmodule SAML do
     end
   end
 
+  defp validate_assertion_version(%SAML.Assertion{version: "2.0"}), do: :ok
+  defp validate_assertion_version(_), do: {:error, :bad_version}
+
+  defp validate_assertion_recipient(%SAML.Assertion{recipient: recipient}, recipient), do: :ok
+
+  defp validate_assertion_recipient(_, _), do: {:error, :bad_recipient}
+
+  defp validate_assertion_audience(
+         %SAML.Assertion{conditions: %{audience: audience}},
+         audience
+       ),
+       do: :ok
+
+  defp validate_assertion_audience(_, _) do
+    {:error, :bad_audience}
+  end
+
+  defp get_stale_time_from_subject(%SAML.Subject{notonorafter: ""}), do: nil
+
+  defp get_stale_time_from_subject(%SAML.Subject{notonorafter: restrict}) do
+    restrict
+    |> SAML.Utils.saml_to_datetime()
+    |> :calendar.datetime_to_gregorian_seconds()
+  end
+
+  defp get_stale_time_from_conditions(%{not_on_or_after: restrict}) do
+    restrict |> SAML.Utils.saml_to_datetime() |> :calendar.datetime_to_gregorian_seconds()
+  end
+
+  defp get_stale_time_from_conditions(_), do: nil
+
+  defp get_stale_time_from_issue_instant(issue_instant) do
+    {:ok,
+     issue_instant
+     |> SAML.Utils.saml_to_datetime()
+     |> :calendar.datetime_to_gregorian_seconds()
+     |> Kernel.+(5 * 60)}
+  end
+
+  def stale_time(assertion) do
+    Enum.min([
+      get_stale_time_from_subject(assertion.subject),
+      get_stale_time_from_conditions(assertion.conditions)
+    ]) || get_stale_time_from_issue_instant(assertion.issue_instant)
+  end
+
+  defp now_in_seconds() do
+    :erlang.localtime()
+    |> :erlang.localtime_to_universaltime()
+    |> :calendar.datetime_to_gregorian_seconds()
+  end
+
+  defp validate_assertion_stale(assertion) do
+    if now_in_seconds() > stale_time(assertion) do
+      {:error, :stale_assertion}
+    else
+      :ok
+    end
+  end
+
+  @spec validate_assertion(
+          assertion_xml :: SAML.XMerl.Record.xml_element(),
+          recipient :: String.t(),
+          audience :: String.t()
+        ) :: {:ok, %SAML.Assertion{}} | {:error, reason :: atom}
+  def validate_assertion(assertion_xml, recipient, audience) do
+    with {:ok, assertion} <- decode_assertion(assertion_xml),
+         :ok <- validate_assertion_version(assertion),
+         :ok <- validate_assertion_recipient(assertion, recipient),
+         :ok <- validate_assertion_audience(assertion, audience),
+         :ok <- validate_assertion_stale(assertion) do
+      {:ok, assertion}
+    end
+  end
+
   @response_version_query '/samlp:Response/@Version'
   @response_issue_instant_query '/samlp:Response/@IssueInstant'
   @response_destination_query '/samlp:Response/@Destination'
@@ -250,7 +325,7 @@ defmodule SAML do
            XPath.attr_required(xml, @ns, @response_issue_instant_query, :bad_response),
          destination <- XPath.attr(xml, @ns, @response_destination_query, ""),
          issuer <- XPath.text(xml, @ns, @response_issuer_query, ""),
-         status <- XPath.attr(xml, @ns, @response_status_query, :unknown),
+         status <- XPath.attr(xml, @ns, @response_status_query, nil),
          assertion_raw <- XPath.recurse(xml, @ns, @response_assertion_query, nil),
          {:ok, assertion} <- decode_assertion(assertion_raw) do
       {:ok,
