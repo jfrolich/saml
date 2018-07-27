@@ -287,6 +287,86 @@ defmodule SAMLTest do
       value: 'now'
     )
   ]
+
+  defp example_1(ns, death) do
+    SAML.Utils.build_nsinfo(
+      ns,
+      xml_element(
+        name: :"saml:Assertion",
+        attributes: @assertion_attributes,
+        content: [
+          xml_element(
+            name: :"saml:Subject",
+            content: [
+              xml_element(
+                name: :"saml:SubjectConfirmation",
+                content: [
+                  xml_element(
+                    name: :"saml:SubjectConfirmationData",
+                    attributes: [
+                      xml_attribute(name: :Recipient, value: 'foobar'),
+                      xml_attribute(name: :NotOnOrAfter, value: death)
+                    ]
+                  )
+                ]
+              )
+            ]
+          ),
+          xml_element(
+            name: :"saml:Conditions",
+            content: [
+              xml_element(
+                name: :"saml:AudienceRestriction",
+                content: [
+                  xml_element(
+                    name: :"saml:Audience",
+                    content: [
+                      xml_text(value: 'foo')
+                    ]
+                  )
+                ]
+              )
+            ]
+          )
+        ]
+      )
+    )
+  end
+
+  def example_2(ns) do
+    SAML.Utils.build_nsinfo(
+      ns,
+      xml_element(
+        name: :"saml:Assertion",
+        attributes: @assertion_attributes,
+        content: [
+          xml_element(
+            name: :"saml:Subject",
+            content: [
+              xml_element(name: :"saml:SubjectConfirmation", content: [])
+            ]
+          ),
+          xml_element(
+            name: :"saml:Conditions",
+            content: [
+              xml_element(
+                name: :"saml:AudienceRestriction",
+                content: [
+                  xml_element(
+                    name: :"saml:Audience",
+                    content: [
+                      xml_text(value: "foo")
+                    ]
+                  )
+                ]
+              )
+            ]
+          )
+        ]
+      )
+    )
+  end
+
   test "validate assertion" do
     now = :erlang.localtime() |> :erlang.localtime_to_universaltime()
     death_secs = now |> :calendar.datetime_to_gregorian_seconds()
@@ -296,49 +376,7 @@ defmodule SAMLTest do
 
     ns = xml_namespace(nodes: [{'saml', :"urn:oasis:names:tc:SAML:2.0:assertion"}])
 
-    e1 =
-      SAML.Utils.build_nsinfo(
-        ns,
-        xml_element(
-          name: :"saml:Assertion",
-          attributes: @assertion_attributes,
-          content: [
-            xml_element(
-              name: :"saml:Subject",
-              content: [
-                xml_element(
-                  name: :"saml:SubjectConfirmation",
-                  content: [
-                    xml_element(
-                      name: :"saml:SubjectConfirmationData",
-                      attributes: [
-                        xml_attribute(name: :Recipient, value: 'foobar'),
-                        xml_attribute(name: :NotOnOrAfter, value: death)
-                      ]
-                    )
-                  ]
-                )
-              ]
-            ),
-            xml_element(
-              name: :"saml:Conditions",
-              content: [
-                xml_element(
-                  name: :"saml:AudienceRestriction",
-                  content: [
-                    xml_element(
-                      name: :"saml:Audience",
-                      content: [
-                        xml_text(value: 'foo')
-                      ]
-                    )
-                  ]
-                )
-              ]
-            )
-          ]
-        )
-      )
+    e1 = example_1(ns, death)
 
     assert {:ok, assertion} = SAML.validate_assertion(e1, "foobar", "foo")
 
@@ -356,7 +394,16 @@ defmodule SAMLTest do
     assert {:error, :bad_recipient} = SAML.validate_assertion(e1, "foo", "something")
     assert {:error, :bad_audience} = SAML.validate_assertion(e1, "foobar", "something")
 
-    e2 =
+    e2 = example_2(ns)
+    assert {:error, :bad_recipient} = SAML.validate_assertion(e2, "", "")
+  end
+
+  test "validate stale assertion" do
+    ns = xml_namespace(nodes: [{'saml', :"urn:oasis:names:tc:SAML:2.0:assertion"}])
+
+    old_stamp = SAML.Utils.datetime_to_saml({{1990, 1, 1}, {1, 1, 1}})
+
+    example =
       SAML.Utils.build_nsinfo(
         ns,
         xml_element(
@@ -366,19 +413,14 @@ defmodule SAMLTest do
             xml_element(
               name: :"saml:Subject",
               content: [
-                xml_element(name: :"saml:SubjectConfirmation", content: [])
-              ]
-            ),
-            xml_element(
-              name: :"saml:Conditions",
-              content: [
                 xml_element(
-                  name: :"saml:AudienceRestriction",
+                  name: :"saml:SubjectConfirmation",
                   content: [
                     xml_element(
-                      name: :"saml:Audience",
-                      content: [
-                        xml_text(value: "foo")
+                      name: :"saml:SubjectConfirmationData",
+                      attributes: [
+                        xml_attribute(name: :Recipient, value: 'foobar'),
+                        xml_attribute(name: :NotOnOrAfter, value: old_stamp)
                       ]
                     )
                   ]
@@ -389,6 +431,6 @@ defmodule SAMLTest do
         )
       )
 
-    assert {:error, :bad_recipient} = SAML.validate_assertion(e2, "", "")
+    {:error, :stale_assertion} = SAML.validate_assertion(example, "foobar", "foo")
   end
 end

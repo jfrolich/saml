@@ -6,6 +6,13 @@ defmodule SAML.XMerl.Record do
             :xmlNamespace,
             extract(:xmlNamespace, from_lib: "xmerl/include/xmerl.hrl")
 
+  defrecord :xml_document,
+            :xmlDocument,
+            extract(:xmlDocument, from_lib: "xmerl/include/xmerl.hrl")
+
+  defrecord :xml_comment, :xmlComment, extract(:xmlComment, from_lib: "xmerl/include/xmerl.hrl")
+  defrecord :xml_pi, :xmlPI, extract(:xmlPI, from_lib: "xmerl/include/xmerl.hrl")
+
   @type xml_namespace ::
           record(
             :xml_namespace,

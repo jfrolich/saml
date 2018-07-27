@@ -149,7 +149,7 @@ defmodule SAML do
   @cond_not_before_query '/saml:Conditions/@NotBefore'
   @cond_not_on_or_after_query '/saml:Conditions/@NotOnOrAfter'
   @cond_audience_query '/saml:Conditions/saml:AudienceRestriction/saml:Audience/text()'
-  defp decode_assertion_conditions(nil), do: []
+  defp decode_assertion_conditions(nil), do: %{}
 
   defp decode_assertion_conditions(xml) do
     with not_before <- XPath.attr(xml, @ns, @cond_not_before_query, nil),
@@ -251,9 +251,10 @@ defmodule SAML do
        ),
        do: :ok
 
-  defp validate_assertion_audience(_, _) do
-    {:error, :bad_audience}
-  end
+  defp validate_assertion_audience(%SAML.Assertion{conditions: %{audience: _}}, _),
+    do: {:error, :bad_audience}
+
+  defp validate_assertion_audience(_, _), do: :ok
 
   defp get_stale_time_from_subject(%SAML.Subject{notonorafter: ""}), do: nil
 
